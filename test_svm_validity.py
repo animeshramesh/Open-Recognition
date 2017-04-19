@@ -41,57 +41,14 @@ def arg_parser():
 
     return args
 
-# def test():
-#     GT_DIR = '/capstone/GT_Pugh'
-#     meta_filename = os.path.join(GT_DIR, 'meta.txt')
-#     # Load in the meta word mapping data
-#     word_list, word_map = utils.load_word_map(meta_filename)
-
-#     # Load in all data (features) from disk
-#     data_handler = utils.DataHandler()
-
-
-#     # Load and parse all the meta data
-#     with open(meta_filename, 'r') as f:
-#         content = f.readlines()
-#     content = [line.rstrip('\n') for line in content]
-#     del content[0] #remove the first word_list line
-#     n_triples = len(content)
-
-#     # Load up a dummy SVM
-#     classifier = pegasos.PegasosSVMClassifier()
-#     classifier.fit(np.zeros((2,4096)), np.asarray([1,0]))
-
-#     for exemplar_triple in content:
-#         split_exemplar = filter(None, exemplar_triple.split(' '))
-#         split_exemplar = [int(x) for x in split_exemplar]
-
-#         # parse the exemplar
-#         identity = split_exemplar[0]
-#         base_class_idx = split_exemplar[1]
-#         base_class_name = word_list[base_class_idx]
-#         novel_class_idx = split_exemplar[2]
-#         novel_class_name = word_list[novel_class_idx]
-#         neg_class_idxs = np.asarray(split_exemplar[3:])
-#         neg_class_names = [word_list[x] for x in neg_class_idxs]
-
-#         # load in the SVM weights
-#         weight_filename = os.path.join(GT_DIR, str(identity) + '.npz')
-#         #dictionary with keys X1, X2, and Y
-#         # X1: base_svm, X2: novel_svm, Y: updated base_svm
-#         weights = np.load(weight_filename)
-#         classifier.weight_vector.weights = weights['X1'] / np.linalg.norm(weights['X1'])
-
-#         #This is totally just for debugging
-#         classifier.predict(data_handler.features['fire'])
-#         pdb.set_trace()
-#     pos_category_name = 'zebra'
-#     neg_category_name = 'fish'
-
-
 def validate_model(args):
+    '''
+    Validates from precomputed triples
+    '''
 
-    meta_filename = os.path.join(args.input_dir, '1.meta')
+    file_id = '2'
+
+    meta_filename = os.path.join(args.input_dir, file_id + '.meta')
 
     # Load in the meta word mapping data
     word_list, word_map = utils.load_word_map(meta_filename)
@@ -103,11 +60,12 @@ def validate_model(args):
     with open(meta_filename, 'r') as f:
         content = f.readlines()
     content = [line.rstrip('\n') for line in content]
+
     del content[0] #remove the first word_list line
     n_triples = len(content)
 
     # Load the X1, X2 and Y data from the npz file
-    triplets = np.load(os.path.join(args.input_dir, '1.npz'))
+    triplets = np.load(os.path.join(args.input_dir, file_id + '.npz'))
     X1 = triplets['X1']
     X2 = triplets['X2']
     Y = triplets['Y']
@@ -147,9 +105,9 @@ def validate_model(args):
         pos_features, neg_features = prepare_features(base_class_name, [novel_class_name] + neg_class_names, data_handler)
 
         # Compute the accuracy of the svm and the regressor network
-        accuracy_old_svm = compute_accuracy(X1[i,:], pos_features, neg_features)
-        accuracy_goal_svm = compute_accuracy(Y[i,:], pos_features, neg_features)
-        accuracy_regressor = compute_accuracy(Y_hat, pos_features, neg_features)
+        accuracy_old_svm   = compute_accuracy(X1[i,:], pos_features, neg_features)
+        accuracy_goal_svm  = compute_accuracy(Y[i,:] , pos_features, neg_features)
+        accuracy_regressor = compute_accuracy(Y_hat  , pos_features, neg_features)
 
         logging.debug('Old SVM accuracy = {0}, Goal SVM accuracy = {1} Regressor network acc = {2}'.format(
                 str(accuracy_old_svm), str(accuracy_goal_svm), str(accuracy_regressor)))
@@ -189,16 +147,33 @@ def prepare_features(pos_class, neg_classes, data_handler):
     for neg_class in neg_classes:
         neg_features.extend(data_handler.get_features(neg_class))
     neg_features = np.array(neg_features)
-
     return pos_features, neg_features
 
 
 def simulate_validation(model, svm_lib, base_num, features_path):
+    '''
+    Loads in all classes in features path
+    Randomly selects ${base_num} to be base_classes
+    The rest are novel_classes
 
+    Then selects a positive class from base_classes.
+    Computes an SVM over base_classes
+
+    Then selects a class from novel_classes
+    Computes an SVM over novel_class with base_classes as negative.
+
+    Finally calculates the updated SVM for the original class
+
+    Feeds this through the neural network
+
+    reports all svm accuracies
+
+    '''
     data_handler = utils.DataHandler(features_path)
     svm_handler = utils.SVMHandler(data_handler)
     all_categories = data_handler.get_all_categories()
     shuffle(all_categories)
+
     base_classes = all_categories[:base_num]
     novel_classes = all_categories[base_num:]
 
@@ -214,39 +189,47 @@ def simulate_validation(model, svm_lib, base_num, features_path):
 
         for novel_class in novel_classes:
             # Calculate the Novel SVM Parameters
-            X2 = svm_handler.get_svm_weights(novel_class, base_classes)
+            X2 = svm_handler.get_svm_weights(novel_class, base_classes, svm_library=svm_lib)
 
             # Calculate the New SVM Parameters
             neg_classes_new = neg_classes_old[:]
             neg_classes_new.append(novel_class)
-            Y = svm_handler.get_svm_weights(pos_class, neg_classes_new)		# This is not needed. But just in case..
+            Y = svm_handler.get_svm_weights(pos_class, neg_classes_new)
+
+            # Normalize data
+            X1 = X1 / np.linalg.norm(X1, keepdims=True)
+            X2 = X2 / np.linalg.norm(X2, keepdims=True)
+            Y  = Y  / np.linalg.norm(Y, keepdims=True)
 
             X = np.array([np.hstack((X1, X2))])
-            # Y_hat_delta = model.predict(X)
+            Y_hat_delta = model.predict(X)
 
             X1_net = np.reshape(X1, (1,4096))
             X2_net = np.reshape(X2, (1,4096))
 
-            Y_hat_delta = model.predict([X1_net, X2_net])
             Y_hat = X1_net + Y_hat_delta
 
             # Compare results of SVM and deep model
             pos_features, neg_features = prepare_features(pos_class, neg_classes_new, data_handler)
-            accuracy_svm = compute_accuracy(X1, pos_features, neg_features)
-            accuracy2 = compute_accuracy(Y_hat, pos_features, neg_features)
+            accuracy_X1         = compute_accuracy(X1,    pos_features, neg_features)
+            accuracy_neural_net = compute_accuracy(Y_hat, pos_features, neg_features)
+            accuracy_Y          = compute_accuracy(Y,     pos_features, neg_features)
 
             # Append to global accuracies
-            svm_acc.append(accuracy_svm)
-            regressor_acc.append(accuracy2)
-
-            # logging.debug('Base class = {0}, Novel class = {1} -> SVM accuracy = {2}, Regressor network acc = {3}'.format(pos_class, novel_class, str(accuracy_svm), str(accuracy2)))
-            logging.debug('SVM accuracy = {0}, Regressor network acc = {1}'.format(str(accuracy_svm), str(accuracy2)))
+            #svm_acc.append(accuracy_svm)
+            #regressor_acc.append(accuracy2)
+            logging.debug('X1 Acc: {0}, NeuralNet Acc: {1} -> Y Acc: {2}'.format(
+                    accuracy_X1, accuracy_neural_net, accuracy_Y))
+            #logging.debug('SVM accuracy = {0}, Regressor network acc = {1}'.format(str(accuracy_svm), str(accuracy2)))
 
 def main():
     # test()
     args = arg_parser()
+
     validate_model(args)
-    # simulate_validation(model, args.svm_library, args.base_num, args.features_path)
+
+    #model = load_model(args.input_model)
+    #simulate_validation(model, args.svm_library, args.base_num, args.features_path)
 
 if __name__ == '__main__':
     main()

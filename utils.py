@@ -127,6 +127,12 @@ class SVMHandler:
         x, y = self.data_handler.prepare_data_for_svm(pos_class, neg_classes)
         svm = pegasos.PegasosSVMClassifier()
         svm.fit(x, y)
+
+        print_predict=False
+        if print_predict:
+            result = svm.predict(x)
+            acc = np.average(np.equal(y, result))
+            print("Acc %.4f" % acc)
         return svm
 
     def __get_pegasos_weights(self, svm):

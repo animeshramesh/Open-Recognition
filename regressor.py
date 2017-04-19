@@ -22,7 +22,10 @@ from keras.callbacks import ModelCheckpoint
 
 from batch_generator import data_generator
 
-
+'''
+Contains all the svm hyperplane predictor models.
+Also trains and saves the models
+'''
 # Script to run in the terminal
 # python -u regressor.py </dev/null &>/dev/null & disown
 # or run ./run_regressor.sh
@@ -39,16 +42,13 @@ def arg_parser():
 
     parser.add_argument('--valid_dir', type=str, default='/media/storage/capstone/data/ILSVRC2013/svm_triples/validate',
                         help='Validation Data path')
-    parser.add_argument('-l', '--loss_type', type=str, default='mean_squared_error',
-                        help='Type of loss for the model : mean_squared_error '
-                             'or mean_absolute_error or cosine_proximity')
     parser.add_argument('-s', '--save_file', type=str, default=os.path.join('..', 'models/default.h5'),
                         help='Trained model will be saved to this file')
     parser.add_argument('-e', '--epoch', type=int, default=100,
                         help='Number of epochs to train')
     parser.add_argument('-b', '--batch_size', type=int, default=32,
                         help='Batch size for each iteration')
-    parser.add_argument('-m', '--model_type', type=str, default='layer_4_leaky',
+    parser.add_argument('-m', '--model_type', type=str, default='',
                         help='Model type for training')
     args = parser.parse_args()
     if args.verbose:
@@ -96,8 +96,8 @@ if __name__ == "__main__":
         model.add(LeakyReLU(alpha=alpha))
         model.add(Dense(4096))
 
-        # optimizer = optimizers.Adam(lr=0.005)
-        optimizer = optimizers.SGD(lr=0.00001)
+        optimizer = optimizers.Adam(lr=0.00001)
+        # optimizer = optimizers.SGD(lr=0.00001)
         model.compile(loss='mean_squared_error', optimizer=optimizer)
 
     elif args.model_type == 'layer_3_leaky':
@@ -174,7 +174,7 @@ if __name__ == "__main__":
                 kernel_initializer=glorot_normal(),
                 bias_initializer='zeros')(merged)
 
-        optimizer = optimizers.Adam(lr=0.001)
+        optimizer = optimizers.Adam(lr=0.00001)
         model = Model(inputs=X, outputs=fc2)
         model.compile(loss='mean_squared_error', optimizer=optimizer)
 
@@ -234,7 +234,7 @@ if __name__ == "__main__":
                 kernel_initializer=glorot_normal(),
                 bias_initializer='zeros')(merged)
 
-        optimizer = optimizers.Adam(lr=0.0001)
+        optimizer = optimizers.Adam(lr=0.00001)
         model = Model(inputs=X, outputs=fc2)
         model.compile(loss='mean_squared_error', optimizer=optimizer)
 
@@ -251,6 +251,6 @@ if __name__ == "__main__":
     checkpoint = ModelCheckpoint(filepath=args.save_file, monitor='val_loss', verbose=1, save_best_only=True, mode='min')
     callbacks_list = [checkpoint]
     # epochs use to be 35000
-    model.fit_generator(train_generator, steps_per_epoch=5000, epochs=args.epoch,
-        validation_data=validation_generator, validation_steps=4000,max_q_size=64,workers=1, callbacks=callbacks_list)
+    model.fit_generator(train_generator, steps_per_epoch=1000, epochs=args.epoch,
+        validation_data=validation_generator, validation_steps=3000,max_q_size=64,workers=1, callbacks=callbacks_list)
     model.save(args.save_file)

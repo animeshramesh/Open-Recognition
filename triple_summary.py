@@ -5,6 +5,11 @@ import re
 from scipy.spatial.distance import cosine
 import matplotlib.pyplot as plt
 
+'''
+Used to generate histrogram data about
+triple distributions
+'''
+
 def sort_nicely(l):
     """
     Sort the given list in the way that humans expect.
